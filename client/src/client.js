@@ -3,19 +3,24 @@ const dgram = require('dgram');
 const { WebSocket } = require('ws');
 const crypto = require('crypto');
 const encoder = new TextEncoder();
-
-// setting.json
-let setting;
-// dgram socket
-let sender;
-// websocket client
-let ws;
+const decoder = new TextDecoder();
 
 const SETTING_JSON_PATH = './client/setting.json';
 const OUTPUT_PATH = 'D:/Games/SteamLibrary/steamapps/common/X-Plane 11/Output/';
 const CSV_FILENAME = /LTExportFD - 20\d\d-\d\d-\d\d \d\d\.\d\d\.\d\d.csv/;
 
+// setting.json
+let setting;
+// dgram socket
+let sender;
+
+// websocket client
+let ws;
+let ping;
+let stopPing = true;
+let wsRetry = 0;
 let wsToken = '';
+
 // path to latest csv file
 let latestFilePath = '';
 // csv file's last modified time(unix)
@@ -55,6 +60,7 @@ async function initialize() {
   ws.on('open', () => {
     log('WebSocket: connected');
     log('WebSocket: wating authentication process');
+    stopPing = false;
   });
 
 
@@ -62,31 +68,67 @@ async function initialize() {
   ws.on('message', (msg) => {
     msg = String(msg);
     if (msg == null || msg.length === 0) return;
-    log(msg);
+    // log(msg);
     const msgArr = msg.split(';');
 
     switch (msgArr[0]) {
       // authentication
       case 'auth-required':
-        const hashHex = crypto.createHash('sha256').update(`${setting.id}${msgArr[1]}`).digest('hex');
-        ws.send(`auth-request;${hashHex}`);
+        log(`WebSocket: ${msg}`);
+        const answer = crypto.createHash('sha256').update(`${setting.id}${msgArr[1]}`).digest('hex');
+        log(`WebSocket: auth-request;${answer}`)
+        ws.send(`auth-request;${answer}`);
         break;
 
       case 'token':
-        log(`WebSocket: token=${msgArr[1]}`);
+        log(`WebSocket: authentication succeed: token=${msgArr[1]}`);
         wsToken = msgArr[1];
         break;
 
+      // recieve multiplayer's positions
+      case 'update-pos':
+        log(`WebSocket: ${msg}`);
+        sendToLiveTraffic(msgArr[1]);
+        break;
+
       default:
-        log(`WebSocket: ERROR: unknown command: ${msgArr[0]}`);
+        log(`WebSocket: ERROR: unknown command type: ${msgArr[0]}`);
     }
   });
 
-  ws.on('close', () => {
-    log('WebSocket: ERROR: connection disconected');
-    // log('Websocket: connecting');
-    // ws = new WebSocket(setting.server);
+
+  ws.on('close', (code, reason) => {
+    log(`WebSocket: ERROR: connection closed: code=${code} reason=${decoder.decode(reason)}`);
+    ws.terminate();
+    stopPing = true;
+
+    // retry after 5s
+    setTimeout(() => {
+      if (wsRetry < 5) ws = new WebSocket(setting.server);
+      else log('WebSocket: ERROR: reopen limit reached');
+      wsRetry += 1;
+    }, 5000);
   });
+
+
+  ws.on('error', (e) => {
+    log(`WebSocket: ERROR: connection error: ${e}`);
+
+    // retry after 5s
+    setTimeout(() => {
+      if (wsRetry < 5) ws = new WebSocket(setting.server);
+      else log('WebSocket: ERROR: reconnection limit reached');
+      wsRetry += 1;
+    }, 5000);
+  });
+
+
+  // connection keep alive
+  setInterval(() => {
+    ping = Date.now();
+    if (!stopPing) ws.ping();
+  }, 10000);
+  ws.on('pong', () => log(`WebSocket: ping ${Date.now() - ping}`));
 
   // start main process
   main();
@@ -110,7 +152,9 @@ async function main() {
     // if valid data
     if (line.length > 0 && !line.startsWith('{')) {
       log(`sending: ${line}`);
-      sendToLiveTraffic(line);
+      setdToServer(line);
+      // for debug
+      // sendToLiveTraffic(line);
       complete = true;
     }
   }
@@ -140,6 +184,17 @@ function scan() {
     log(`csv updated!`);
     resolve(file);
   });
+}
+
+
+function setdToServer(msg) {
+  if (ws.readyState !== WebSocket.OPEN) {
+    log(`Websocket: update-pos: failed: WebSocket is not open`);
+    return;
+  }
+
+  log(`WebSocket: update-pos;${msg};${wsToken}`);
+  ws.send(`update-pos;${msg};${wsToken}`);
 }
 
 
