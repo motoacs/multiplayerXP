@@ -1,7 +1,0 @@
-{
-  "scripts": {
-    "SendTraffic from CSV": "python SendTraffic.py \"LTExportFD - 2021-08-29 17.10.51.csv\"",
-    "SendTraffic -u -up": "python SendTraffic.py -u -up",
-    "SendTraffic -u": "python SendTraffic.py -u"
-  }
-}

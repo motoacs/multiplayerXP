@@ -1,3 +1,5 @@
 {
-  "callsign": "DLH012"
+  "callsign": "DLH012",
+  "server": "ws://localhost:8080/",
+  "id": "gould"
 }

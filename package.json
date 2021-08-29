@@ -1,0 +1,24 @@
+{
+  "name": "multiplayerXP",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "main": "node ./client/src/client.js",
+    "server": "node ./server/src/server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/motoacs/multiplayerXP.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/motoacs/multiplayerXP/issues"
+  },
+  "homepage": "https://github.com/motoacs/multiplayerXP#readme",
+  "dependencies": {
+    "ws": "^8.2.1"
+  }
+}
