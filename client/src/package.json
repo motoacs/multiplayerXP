@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "run main": "node --experimental-modules  main.js",
+    "run udp_listen": "node --experimental-modules  udp_listen.js"
+  }
+}
