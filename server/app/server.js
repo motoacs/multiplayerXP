@@ -5,7 +5,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 
-const SETTING_JSON_PATH = './server/setting.json';
+const SETTING_JSON_PATH = '../data/setting.json';
 
 let setting;
 let wss;
