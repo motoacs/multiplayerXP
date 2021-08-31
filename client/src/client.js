@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-const SETTING_JSON_PATH = './client/setting.json';
+const SETTING_JSON_PATH = './data/setting.json';
 const OUTPUT_PATH = 'D:/Games/SteamLibrary/steamapps/common/X-Plane 11/Output/';
 const CSV_FILENAME = /LTExportFD - 20\d\d-\d\d-\d\d \d\d\.\d\d\.\d\d.csv/;
 
@@ -59,7 +59,7 @@ async function initialize() {
   // open
   ws.on('open', () => {
     log('WebSocket: connected');
-    log('WebSocket: wating authentication process');
+    log('WebSocket: wating for authentication process');
     stopPing = false;
   });
 
@@ -125,10 +125,10 @@ async function initialize() {
 
   // connection keep alive
   setInterval(() => {
-    ping = Date.now();
+    pingStart = Date.now();
     if (!stopPing) ws.ping();
   }, 10000);
-  ws.on('pong', () => log(`WebSocket: ping ${Date.now() - ping}`));
+  ws.on('pong', () => log(`WebSocket: ping ${Date.now() - pingStart}`));
 
   // start main process
   main();
