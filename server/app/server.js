@@ -150,7 +150,7 @@ async function initialize() {
     });
 
     // connection keep alive (returns pong automatically)
-    ws.on('ping', () => log(`WebSocket: ping: ${id}`));
+    // ws.on('ping', () => log(`WebSocket: ping: ${id}`));
 
     ws.on('close', (code, reason) => {
       log(`WebSocket: connection closed: [${ip}] ${id} token=${token} code=${code} reason=${decoder.decode(reason)}`);

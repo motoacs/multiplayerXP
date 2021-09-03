@@ -59,7 +59,7 @@ async function initialize() {
   // open
   ws.on('open', () => {
     log('WebSocket: connected');
-    log('WebSocket: wating for authentication process');
+    log('WebSocket: waiting for authentication process');
     stopPing = false;
   });
 
