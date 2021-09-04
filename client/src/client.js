@@ -20,6 +20,9 @@ let ping;
 let stopPing = true;
 let wsRetry = 0;
 let wsToken = '';
+let wsPassword = '';
+let wsSalt = '';
+let wsKey = '';
 
 // path to latest csv file
 let latestFilePath = '';
@@ -66,33 +69,52 @@ async function initialize() {
 
   // message
   ws.on('message', (msg) => {
-    msg = String(msg);
-    if (msg == null || msg.length === 0) return;
-    // log(msg);
-    const msgArr = msg.split(';');
+    try {
+      // validation
+      msg = String(msg);
+      if (msg == null || msg.length === 0) return;
+    }
+    catch (e) {
+      return;
+    }
 
-    switch (msgArr[0]) {
-      // authentication
-      case 'auth-required':
-        log(`WebSocket: ${msg}`);
-        const answer = crypto.createHash('sha256').update(`${setting.id}${msgArr[1]}`).digest('hex');
-        log(`WebSocket: auth-request;${answer}`)
-        ws.send(`auth-request;${answer}`);
-        break;
+    // authentication
+    if (msg.startsWith('auth-required;')) {
+      msg = msg.split(';');
+      log(`WebSocket: ${msg}`);
+      const answer = crypto.createHash('sha256').update(`${setting.id}${msg[1]}${setting.id}${setting.id}`).digest('hex');
+      log(`WebSocket: auth-request;${answer}`)
+      ws.send(`auth-request;${answer}`);
+    }
 
-      case 'token':
-        log(`WebSocket: authentication succeed: token=${msgArr[1]}`);
-        wsToken = msgArr[1];
-        break;
+    else if (msg.startsWith('auth-success;')) {
+      msg = msg.split(';');
+      log(`WebSocket: authentication succeed: token=${msg[1]}`);
+      wsToken = msg[1];
+      wsPassword = crypto.createHash('sha256').update(`${setting.id}${setting.id}${wsToken}${wsToken}`).digest('hex');
+      wsSalt = crypto.createHash('sha256').update(`${wsToken}${setting.id}${wsToken}${setting.id}`).digest('hex');
+      wsKey = crypto.scryptSync(wsPassword, wsSalt, 32);
+    }
+
+    // encrypt data
+    else {
+      msg = decrypt(...msg.split(';'));
+
+      try {
+        if (msg === '') throw new Error('invalid message');
+
+        msg = msg.split(';');
+        if (msg[0] !== 'update-pos') throw new Error('invalid command');
+        else if (!(msg[1].length > 0)) throw new Error('invalid posdata');
+      }
+      catch (e) {
+        log(`WebSocket: ERROR: ${e}`);
+        return;
+      }
 
       // recieve multiplayer's positions
-      case 'update-pos':
-        log(`WebSocket: ${msg}`);
-        sendToLiveTraffic(msgArr[1]);
-        break;
-
-      default:
-        log(`WebSocket: ERROR: unknown command type: ${msgArr[0]}`);
+      log(`WebSocket: ${msg.join(';')}`);
+      sendToLiveTraffic(msg[1]);
     }
   });
 
@@ -193,8 +215,11 @@ function setdToServer(msg) {
     return;
   }
 
-  log(`WebSocket: update-pos;${msg};${wsToken}`);
-  ws.send(`update-pos;${msg};${wsToken}`);
+  log(`WebSocket: update-pos;${wsToken};${msg}`);
+
+  // encrypt
+  const { encryptData, iv } = encrypt(`update-pos;${wsToken};${msg}`);
+  ws.send(`${encryptData};${iv}`);
 }
 
 
@@ -231,6 +256,30 @@ function sendMyPos(data) {
 // ============================
 // utils
 // ============================
+
+function encrypt(msg) {
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-cbc', wsKey, iv);
+  const data = Buffer.from(msg);
+  let encryptData = cipher.update(data);
+  encryptData = Buffer.concat([encryptData, cipher.final()]);
+
+  return { encryptData, iv };
+}
+
+function decrypt(encryptData, iv) {
+  let msg;
+  try {
+    const decipher = crypto.createDecipheriv('aes-256-cbc', wsKey, iv);
+    const data = decipher.update(encryptData);
+    msg = Buffer.concat([data, decipher.final()]);
+  }
+  catch (e) {
+    msg = '';
+  }
+
+  return msg;
+}
 
 // Console Output
 function log(logTxt) {

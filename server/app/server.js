@@ -45,6 +45,9 @@ async function initialize() {
     const ip = requestHeader.socket.remoteAddress;
     let id = '';
     let token = '';
+    let password = '';
+    let salt = '';
+    let key = '';
     let correctAnswers = [];
     let authTimer = null;
 
@@ -61,10 +64,10 @@ async function initialize() {
     // =============================
     // authentication process
     // =============================
-    let challengeHash = crypto.createHash('sha256').update(String(Math.random())).digest('hex');
+    let challengeHash = crypto.createHash('sha256').update(crypto.randomBytes(32).toString('base64')).digest('hex');
     // correct answers
     setting.users.forEach((user) => {
-      correctAnswers.push(crypto.createHash('sha256').update(`${user}${challengeHash}`).digest('hex'));
+      correctAnswers.push(crypto.createHash('sha256').update(`${user}${challengeHash}${user}${user}`).digest('hex'));
     });
 
     // challenge
@@ -84,68 +87,76 @@ async function initialize() {
 
     // message listener
     ws.on('message', (msg) => {
-      let msgArr;
-
       try {
         // validation
         msg = String(msg);
         if (msg == null || msg.length === 0) return;
-        if (msg !== 'auth-request' && token.length === 64 && !msg.includes(token)) return;
-        msgArr = msg.split(';');
       }
       catch (e) {
         return;
       }
 
+      // authentication
+      if (msg.startsWith('auth-request;')) {
+        const idx = correctAnswers.indexOf(msg.split(';')[1]);
+        // ok
+        if (idx >= 0) {
+          correctAnswers = null;
+          id = setting.users[idx];
+          token = crypto.createHash('sha256').update(crypto.randomBytes(32).toString('base64')).digest('hex');
+          password = crypto.createHash('sha256').update(`${id}${id}${token}${token}`).digest('hex');
+          salt = crypto.createHash('sha256').update(`${token}${id}${token}${id}`).digest('hex');
+          key = crypto.scryptSync(password, salt, 32);
 
-      switch (msgArr[0]) {
-        // authentication
-        case 'auth-request':
-          const idx = correctAnswers.indexOf(msgArr[1]);
-          // ok
-          if (idx >= 0) {
-            correctAnswers = null;
-            id = setting.users[idx];
-            token = crypto.createHash('sha256').update(String(Math.random())).digest('hex');
-            clearTimeout(authTimer);
+          clearTimeout(authTimer);
 
-            log(`WebSocket: authentication succeed: [${ip}] user=${id} token=${token}`);
-            ws.send(`token;${token}`);
+          log(`WebSocket: authentication succeed: [${ip}] user=${id} token=${token}`);
+          ws.send(`auth-success;${token}`);
+        }
+
+        // ng
+        else {
+          correctAnswers = null;
+          clearTimeout(authTimer);
+
+          log(`WebSocket: authentication failed: [${ip}] ${msg}`);
+          ws.close();
+          ws.terminate();
+        }
+      }
+
+      // encrypted message
+      else {
+        msg = decrypt(...msg.split(';'));
+
+        try {
+          if (msg === '') throw new Error('invalid message');
+
+          msg = msg.split(';');
+          if (msg[0] !== 'update-pos') throw new Error('invalid command');
+          else if (msg[1] !== token) throw new Error('invalid token');
+          else if (!(msg[2].length > 0)) throw new Error('invalid posdata');
+        }
+        catch (e) {
+          log(`WebSocket: ERROR: ${e}:  [${ip}] ${id}: ${msg}`);
+          ws.close();
+          ws.terminate();
+          return;
+        }
+
+        // valid message
+        log(`WebSocket: update-pos: ${id}: ${msg[2]}`);
+
+        // encrypt message
+        const { encryptData, iv } = encrypt(`update-pos;${msg[2]}`);
+        const encryptMessage = `${encryptData};${iv}`;
+
+        // broadcast posdata excluding itself
+        wss.clients.forEach((client) => {
+          if (client !== ws && client.readyState === WebSocket.OPEN) {
+            client.send(encryptMessage);
           }
-
-          // ng
-          else {
-            correctAnswers = null;
-            clearTimeout(authTimer);
-
-            log(`WebSocket: authentication failed: [${ip}] ${msg}`);
-            ws.close();
-            ws.terminate();
-          }
-          break;
-
-
-        // update aircraft position
-        case 'update-pos':
-          if (msgArr[2] !== token) {
-            log(`WebSocket: update-pos: forbiden: [${ip}] ${id}: ${msg}`);
-            ws.close();
-            ws.terminate();
-            break;
-          }
-
-          log(`WebSocket: update-pos: ${id}: ${msg}`);
-          // broadcast posdata excluding itself
-          wss.clients.forEach((client) => {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-              client.send(`update-pos;${msgArr[1]}`);
-            }
-          });
-
-          break;
-
-        default:
-          log(`WebSocket: ERROR: invalid request: [${ip}] ${id}: ${msg}`);
+        });
       }
     });
 
@@ -159,6 +170,31 @@ async function initialize() {
     ws.on('error', (e) => {
       log(`WebSocket: ERROR: connection error: ${JSON.stringify(e)}: [${ip}] ${id} token=${token}`);
     });
+
+
+    function encrypt(msg) {
+      const iv = crypto.randomBytes(16);
+      const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+      const data = Buffer.from(msg);
+      let encryptData = cipher.update(data);
+      encryptData = Buffer.concat([encryptData, cipher.final()]);
+
+      return { encryptData, iv };
+    }
+
+    function decrypt(encryptData, iv) {
+      let msg;
+      try {
+        const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+        const data = decipher.update(encryptData);
+        msg = Buffer.concat([data, decipher.final()]);
+      }
+      catch (e) {
+        msg = '';
+      }
+
+      return msg;
+    }
   });
 }
 
