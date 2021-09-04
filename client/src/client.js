@@ -98,7 +98,7 @@ async function initialize() {
 
     // encrypt data
     else {
-      msg = decrypt(...msg.split(';'));
+      msg = decrypt(msg);
 
       try {
         if (msg === '') throw new Error('invalid message');
@@ -218,8 +218,9 @@ function setdToServer(msg) {
   log(`WebSocket: update-pos;${wsToken};${msg}`);
 
   // encrypt
-  const { encryptData, iv } = encrypt(`update-pos;${wsToken};${msg}`);
-  ws.send(`${encryptData};${iv}`);
+  const encryptData = encrypt(`update-pos;${wsToken};${msg}`);
+  // console.log(encryptData);
+  ws.send(encryptData);
 }
 
 
@@ -262,19 +263,24 @@ function encrypt(msg) {
   const cipher = crypto.createCipheriv('aes-256-cbc', wsKey, iv);
   const data = Buffer.from(msg);
   let encryptData = cipher.update(data);
-  encryptData = Buffer.concat([encryptData, cipher.final()]);
 
-  return { encryptData, iv };
+  encryptData = Buffer.concat([iv, encryptData, cipher.final()]).toString('base64');
+
+  return encryptData;
 }
 
-function decrypt(encryptData, iv) {
+function decrypt(encryptData) {
   let msg;
   try {
+    const buff = Buffer.from(encryptData, 'base64');
+    const iv = buff.slice(0, 16);
+    encryptData = buff.slice(16);
     const decipher = crypto.createDecipheriv('aes-256-cbc', wsKey, iv);
     const data = decipher.update(encryptData);
-    msg = Buffer.concat([data, decipher.final()]);
+    msg = Buffer.concat([data, decipher.final()]).toString('utf8');
   }
   catch (e) {
+    console.log(e);
     msg = '';
   }
 

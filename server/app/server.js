@@ -1,5 +1,5 @@
 const fs = require('fs').promises;
-const { WebSocketServer } = require('ws');
+const { WebSocketServer, WebSocket } = require('ws');
 const crypto = require('crypto');
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -10,6 +10,8 @@ const SETTING_JSON_PATH = '../data/setting.json';
 let setting;
 let wss;
 let logs = [];
+let clients = [];
+
 
 async function initialize() {
   // get setting.json
@@ -108,6 +110,21 @@ async function initialize() {
           salt = crypto.createHash('sha256').update(`${token}${id}${token}${id}`).digest('hex');
           key = crypto.scryptSync(password, salt, 32);
 
+          clients.push({
+            ws,
+            id,
+            encrypt: (msg) => {
+              const iv = crypto.randomBytes(16);
+              const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+              const data = Buffer.from(msg);
+              let encryptData = cipher.update(data);
+              encryptData = Buffer.concat([iv, encryptData, cipher.final()]).toString('base64');
+
+              return encryptData;
+            }
+          });
+
+
           clearTimeout(authTimer);
 
           log(`WebSocket: authentication succeed: [${ip}] user=${id} token=${token}`);
@@ -127,7 +144,7 @@ async function initialize() {
 
       // encrypted message
       else {
-        msg = decrypt(...msg.split(';'));
+        msg = decrypt(msg);
 
         try {
           if (msg === '') throw new Error('invalid message');
@@ -147,16 +164,22 @@ async function initialize() {
         // valid message
         log(`WebSocket: update-pos: ${id}: ${msg[2]}`);
 
-        // encrypt message
-        const { encryptData, iv } = encrypt(`update-pos;${msg[2]}`);
-        const encryptMessage = `${encryptData};${iv}`;
-
-        // broadcast posdata excluding itself
-        wss.clients.forEach((client) => {
-          if (client !== ws && client.readyState === WebSocket.OPEN) {
-            client.send(encryptMessage);
+        clients.forEach((client) => {
+          const encryptData = client.encrypt(`update-pos;${msg[2]}`);
+          if (client.ws !== ws && client.ws.readyState === WebSocket.OPEN) {
+            client.ws.send(encryptData);
           }
         });
+
+        // // encrypt message
+        // const encryptData = encrypt(`update-pos;${msg[2]}`);
+
+        // // broadcast posdata excluding itself
+        // wss.clients.forEach((client) => {
+        //   if (client !== ws && client.readyState === WebSocket.OPEN) {
+        //     client.send(encryptData);
+        //   }
+        // });
       }
     });
 
@@ -172,22 +195,25 @@ async function initialize() {
     });
 
 
-    function encrypt(msg) {
-      const iv = crypto.randomBytes(16);
-      const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-      const data = Buffer.from(msg);
-      let encryptData = cipher.update(data);
-      encryptData = Buffer.concat([encryptData, cipher.final()]);
+    // function encrypt(msg) {
+    //   const iv = crypto.randomBytes(16);
+    //   const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+    //   const data = Buffer.from(msg);
+    //   let encryptData = cipher.update(data);
+    //   encryptData = Buffer.concat([iv, encryptData, cipher.final()]).toString('base64');
 
-      return { encryptData, iv };
-    }
+    //   return encryptData;
+    // }
 
     function decrypt(encryptData, iv) {
       let msg;
       try {
+        const buff = Buffer.from(encryptData, 'base64');
+        const iv = buff.slice(0, 16);
+        encryptData = buff.slice(16);
         const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
         const data = decipher.update(encryptData);
-        msg = Buffer.concat([data, decipher.final()]);
+        msg = Buffer.concat([data, decipher.final()]).toString('utf8');
       }
       catch (e) {
         msg = '';
