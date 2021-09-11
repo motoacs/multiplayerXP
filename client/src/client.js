@@ -6,7 +6,6 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 const SETTING_JSON_PATH = './data/setting.json';
-const OUTPUT_PATH = 'D:/Games/SteamLibrary/steamapps/common/X-Plane 11/Output/';
 const CSV_FILENAME = /LTExportFD - 20\d\d-\d\d-\d\d \d\d\.\d\d\.\d\d.csv/;
 
 // setting.json
@@ -23,6 +22,7 @@ let wsToken = '';
 let wsPassword = '';
 let wsSalt = '';
 let wsKey = '';
+let pingIntervalId;
 
 // path to latest csv file
 let latestFilePath = '';
@@ -36,14 +36,14 @@ async function initialize() {
   setting = await getJSON(SETTING_JSON_PATH);
 
   // ls
-  const dir = await fs.readdir(OUTPUT_PATH);
+  const dir = await fs.readdir(setting.outputPath);
   console.log(dir);
-
   // filtering csv files
   const csvFilesArr = dir.filter((fileName) => fileName.match(CSV_FILENAME));
   console.log(csvFilesArr);
   // latest
-  latestFilePath = `${OUTPUT_PATH}${csvFilesArr.pop()}`;
+  latestFilePath = `${setting.outputPath}${csvFilesArr.pop()}`;
+
 
   // create udpsocket
   sender = dgram.createSocket({
@@ -52,105 +52,26 @@ async function initialize() {
     sendBufferSize: 1024,
   });
 
+
   // create WebSocket connection
   ws = new WebSocket(setting.server);
-
-  // ============================
-  // WebSocket Event Handler
-  // ============================
-
+  // set WebSocket event handler
   // open
-  ws.on('open', () => {
-    log('WebSocket: connected');
-    log('WebSocket: waiting for authentication process');
-    stopPing = false;
-  });
-
-
+  ws.on('open', onWSConnected);
   // message
-  ws.on('message', (msg) => {
-    try {
-      // validation
-      msg = String(msg);
-      if (msg == null || msg.length === 0) return;
-    }
-    catch (e) {
-      return;
-    }
+  ws.on('message', onWSMsgReceived);
+  // close
+  ws.on('close', onWSDisconnected);
+  // error
+  ws.on('error', onWSDisconnected);
 
-    // authentication
-    if (msg.startsWith('auth-required;')) {
-      msg = msg.split(';');
-      log(`WebSocket: ${msg}`);
-      const answer = crypto.createHash('sha256').update(`${setting.id}${msg[1]}${setting.id}${setting.id}`).digest('hex');
-      log(`WebSocket: auth-request;${answer}`)
-      ws.send(`auth-request;${answer}`);
-    }
-
-    else if (msg.startsWith('auth-success;')) {
-      msg = msg.split(';');
-      log(`WebSocket: authentication succeed: token=${msg[1]}`);
-      wsToken = msg[1];
-      wsPassword = crypto.createHash('sha256').update(`${setting.id}${setting.id}${wsToken}${wsToken}`).digest('hex');
-      wsSalt = crypto.createHash('sha256').update(`${wsToken}${setting.id}${wsToken}${setting.id}`).digest('hex');
-      wsKey = crypto.scryptSync(wsPassword, wsSalt, 32);
-    }
-
-    // encrypt data
-    else {
-      msg = decrypt(msg);
-
-      try {
-        if (msg === '') throw new Error('invalid message');
-
-        msg = msg.split(';');
-        if (msg[0] !== 'update-pos') throw new Error('invalid command');
-        else if (!(msg[1].length > 0)) throw new Error('invalid posdata');
-      }
-      catch (e) {
-        log(`WebSocket: ERROR: ${e}`);
-        return;
-      }
-
-      // recieve multiplayer's positions
-      log(`WebSocket: ${msg.join(';')}`);
-      sendToLiveTraffic(msg[1]);
-    }
-  });
-
-
-  ws.on('close', (code, reason) => {
-    log(`WebSocket: ERROR: connection closed: code=${code} reason=${decoder.decode(reason)}`);
-    ws.terminate();
-    stopPing = true;
-
-    // retry after 5s
-    setTimeout(() => {
-      if (wsRetry < 5) ws = new WebSocket(setting.server);
-      else log('WebSocket: ERROR: reopen limit reached');
-      wsRetry += 1;
-    }, 5000);
-  });
-
-
-  ws.on('error', (e) => {
-    log(`WebSocket: ERROR: connection error: ${e}`);
-
-    // retry after 5s
-    setTimeout(() => {
-      if (wsRetry < 5) ws = new WebSocket(setting.server);
-      else log('WebSocket: ERROR: reconnection limit reached');
-      wsRetry += 1;
-    }, 5000);
-  });
-
-
-  // connection keep alive
-  setInterval(() => {
+  // WebSocket connection keep alive
+  pingIntervalId = setInterval(() => {
     pingStart = Date.now();
     if (!stopPing) ws.ping();
   }, 10000);
   ws.on('pong', () => log(`WebSocket: ping ${Date.now() - pingStart}`));
+
 
   // start main process
   main();
@@ -158,7 +79,14 @@ async function initialize() {
 }
 
 
-// main process
+//                        d8b
+//                        Y8P
+//
+// 88888b.d88b.   8888b.  888 88888b.
+// 888 "888 "88b     "88b 888 888 "88b
+// 888  888  888 .d888888 888 888  888
+// 888  888  888 888  888 888 888  888
+// 888  888  888 "Y888888 888 888  888
 async function main() {
   // read csv file if updated
   let ret = await scan();
@@ -170,12 +98,12 @@ async function main() {
 
   do {
     // last line
-    const line = csvArr.pop();
+    let line = csvArr.pop();
     // if valid data
     if (line.length > 0 && !line.startsWith('{')) {
       line = line.replace(',USER,', `,${setting.callsign},`);
       log(`sending: ${line}`);
-      setdToServer(line);
+      sendToServer(line);
       // for debug
       // sendToLiveTraffic(line);
       complete = true;
@@ -210,18 +138,18 @@ function scan() {
 }
 
 
-function setdToServer(msg) {
+function sendToServer(msg) {
   if (ws.readyState !== WebSocket.OPEN) {
-    log(`Websocket: update-pos: failed: WebSocket is not open`);
+    log(`Websocket: Error: WebSocket is not open`);
     return;
   }
-
-  log(`WebSocket: update-pos;${wsToken};${msg}`);
 
   // encrypt
   const encryptData = encrypt(`update-pos;${wsToken};${msg}`);
   // console.log(encryptData);
   ws.send(encryptData);
+
+  log(`WebSocket: Send: ${msg}`);
 }
 
 
@@ -230,14 +158,10 @@ function setdToServer(msg) {
  * @param  {string} msg
  */
 function sendToLiveTraffic(msg) {
-  sender.send(
-    msg,
-    49003,
-    (ret) => {
+  sender.send(msg, 49003, (ret) => {
       if (ret === null) log('sent');
       else log(ret);
-    },
-  );
+  });
 }
 
 
@@ -247,16 +171,102 @@ initialize();
 
 
 // ============================
-// WebSocket function
+// WebSocket Event Handler
 // ============================
-function sendMyPos(data) {
 
+function onWSConnected() {
+  log('WebSocket: connected');
+  log('WebSocket: waiting for authentication process');
+  stopPing = false;
 }
 
 
+function onWSMsgReceived(msg) {
+  // validation
+  try {
+    msg = String(msg);
+    if (msg == null || msg.length === 0) return;
+  }
+  catch (e) {
+    return;
+  }
+
+  // authentication
+  if (msg.startsWith('auth-required;')) {
+    log(`WebSocket: [Receive] ${msg.join(';')}`);
+    msg = msg.split(';');
+    log('WebSocket: start authentication');
+    const answer = crypto.createHash('sha256').update(`${setting.id}${msg[1]}${setting.id}${setting.id}`).digest('hex');
+    ws.send(`auth-request;${answer}`);
+    log(`WebSocket: [Send] auth-request;${msg}`);
+  }
+
+  else if (msg.startsWith('auth-success;')) {
+    log(`WebSocket: [Receive] ${msg}`);
+    log('WebSocket: authentication succeeded!');
+    msg = msg.split(';');
+    wsToken = msg[1];
+    wsPassword = crypto.createHash('sha256').update(`${setting.id}${setting.id}${wsToken}${wsToken}`).digest('hex');
+    wsSalt = crypto.createHash('sha256').update(`${wsToken}${setting.id}${wsToken}${setting.id}`).digest('hex');
+    wsKey = crypto.scryptSync(wsPassword, wsSalt, 32);
+  }
+
+  // encrypt data
+  else {
+    msg = decrypt(msg);
+
+    // validation
+    try {
+      if (msg === '') throw new Error('dectypt error');
+
+      msg = msg.split(';');
+      if (msg[0] !== 'update-pos') throw new Error('invalid command');
+      else if (typeof msg[1] !== 'string' && msg[1].length === 0) throw new Error('invalid posdata');
+    }
+    catch (e) {
+      log(`WebSocket: ERROR: ${e}`);
+      return;
+    }
+
+    // Receive multiplayer's positions
+    log(`WebSocket: [Receive] ${msg.join(';')}`);
+    sendToLiveTraffic(msg[1]);
+  }
+
+  wsRetry = 0;
+
+}
+
+function onWSDisconnected(code, reason) {
+  log(`WebSocket: ERROR: connection closed: code=${code} reason=${decoder.decode(reason)}`);
+  ws.terminate();
+  ws = null;
+  stopPing = true;
+
+  // retry after 5s
+  setTimeout(() => {
+    if (wsRetry < 5) {
+      clearInterval(pingIntervalId);
+      ws = new WebSocket(setting.server);
+      ws.on('open', onWSConnected);
+      ws.on('message', onWSMsgReceived);
+      ws.on('close', onWSDisconnected);
+      ws.on('error', onWSDisconnected);
+      // WebSocket connection keep alive
+      pingIntervalId = setInterval(() => {
+        pingStart = Date.now();
+        if (!stopPing) ws.ping();
+      }, 10000);
+      ws.on('pong', () => log(`WebSocket: ping ${Date.now() - pingStart}`));
+    }
+    else log('WebSocket: ERROR: reopen limit reached');
+    wsRetry += 1;
+  }, 5000);
+}
+
 
 // ============================
-// utils
+// utilities
 // ============================
 
 function encrypt(msg) {
@@ -281,7 +291,7 @@ function decrypt(encryptData) {
     msg = Buffer.concat([data, decipher.final()]).toString('utf8');
   }
   catch (e) {
-    console.log(e);
+    // console.log(e);
     msg = '';
   }
 
