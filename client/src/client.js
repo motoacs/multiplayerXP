@@ -173,7 +173,7 @@ async function main() {
     const line = csvArr.pop();
     // if valid data
     if (line.length > 0 && !line.startsWith('{')) {
-      line.replace(',USER,', `,${setting.callsign},`);
+      line = line.replace(',USER,', `,${setting.callsign},`);
       log(`sending: ${line}`);
       setdToServer(line);
       // for debug
