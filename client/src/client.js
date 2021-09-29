@@ -193,7 +193,7 @@ function onWSMsgReceived(msg) {
 
   // authentication
   if (msg.startsWith('auth-required;')) {
-    log(`WebSocket: [Receive] ${msg.join(';')}`);
+    log(`WebSocket: [Receive] ${msg}`);
     msg = msg.split(';');
     log('WebSocket: start authentication');
     const answer = crypto.createHash('sha256').update(`${setting.id}${msg[1]}${setting.id}${setting.id}`).digest('hex');
