@@ -15,12 +15,8 @@
 </head>
 <body>
   <div id="app" class="section">
-    <div class="notification is-warning">
-      <button class="delete"></button>
-      {{ notification }}
-    </div>
-
     <!-- <h1 class="title is-1">multiplayerXP</h1> -->
+
     <div class="box">
       <div class="field">
         <label class="label">Server</label>
@@ -29,34 +25,174 @@
         </div>
       </div>
       <div class="field">
-        <label class="label">ID</label>
-        <div class="control">
-          <input id="date" class="input" type="text" placeholder="player#12345" value="">
+        <label class="label">ID / Password</label>
+        <div class="field is-grouped">
+          <p class="control has-icons-left has-icons-right">
+            <input id="id" class="input" type="text" placeholder="" value="">
+            <span class="icon is-small is-left">
+              <svg style="width:24px;height:24px" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M12,4A4,4 0 0,1 16,8A4,4 0 0,1 12,12A4,4 0 0,1 8,8A4,4 0 0,1 12,4M12,14C16.42,14 20,15.79 20,18V20H4V18C4,15.79 7.58,14 12,14Z" />
+              </svg>
+            </span>
+          </p>
+          <p class="control is-expanded has-icons-left has-icons-right">
+            <input id="pass" class="input" type="password" placeholder="" value="">
+            <span class="icon is-small is-left">
+              <svg style="width:24px;height:24px" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z" />
+              </svg>
+            </span>
+          </p>
         </div>
       </div>
       <div class="field">
         <label class="label">Callsign</label>
         <div class="control">
-          <input id="info" class="input" type="text" placeholder="ANA0123" autofocus>
+          <input id="info" class="input" type="text" placeholder="ANA123" autofocus>
         </div>
       </div>
-      <button class="button is-primary is-loading" type="button">Connect</button>
-      <button class="button is-danger" type="button" disabled>Disconnect</button>
-      <button class="button" type="button">
-        <span class="icon">
-          <svg style="width:24px;height:24px" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z" />
-          </svg>
-        </span>
-      </button>
+
+      <div class="field is-grouped">
+        <!-- connect -->
+        <p class="control">
+          <button
+            :class="{ 'is-loading': connected }"
+            @click="start"
+            class="button is-primary"
+            type="button"
+          >
+            <span class="icon">
+              <svg style="width:24px;height:24px" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M8,5.14V19.14L19,12.14L8,5.14Z" />
+              </svg>
+            </span>
+            <span>Start</span>
+          </button>
+        </p>
+
+        <!-- disconnect -->
+        <p class="control">
+          <button
+            @click="stop"
+            :disabled="!connected"
+            class="button"
+            type="button"
+          >
+            <span class="icon">
+              <svg style="width:24px;height:24px" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M18,18H6V6H18V18Z" />
+              </svg>
+            </span>
+            <span>Stop</span>
+          </button>
+        </p>
+
+        <!-- load -->
+        <p class="control">
+          <button
+            @click="loadConfig"
+            class="button"
+            type="button"
+          >
+            <span class="icon">
+              <svg style="width:24px;height:24px" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M18.4,10.6C16.55,9 14.15,8 11.5,8C6.85,8 2.92,11.03 1.54,15.22L3.9,16C4.95,12.81 7.95,10.5 11.5,10.5C13.45,10.5 15.23,11.22 16.62,12.38L13,16H22V7L18.4,10.6Z" />
+              </svg>
+            </span>
+          </button>
+        </p>
+
+        <!-- save -->
+        <p class="control">
+          <button
+            @click="saveConfig"
+            class="button"
+            type="button"
+          >
+            <span class="icon">
+              <svg style="width:24px;height:24px" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z" />
+              </svg>
+            </span>
+          </button>
+        </p>
+      </div>
     </div>
 
-    <div class="content">
-      Lorem ipsum leo risus, porta ac consectetur ac,<br>
-      vestibulum at eros. Donec id elit non mi porta gravida at eget metus.<br>
-      Cum sociis natoque penatibus et magnis dis parturient montes,<br>
-       nascetur ridiculus mus. Cras mattis consectetur purus sit amet fermentum.
+    <!-- notification -->
+    <transition name="fade">
+      <div
+        v-if="notification.text.length"
+        v-cloak
+        :class="[notificationClass]"
+        class="notification"
+      >
+        <button class="delete" @click="closeNotification"></button>
+        {{ notification.text }}
+      </div>
+    </transition>
+
+    <div class="tabs">
+      <ul>
+        <li :class="{ 'is-active': tab === 0 }" @click="setTab(0)">
+          <a>
+            <span class="icon">
+              <svg style="width:24px;height:24px" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M16 17V19H2V17S2 13 9 13 16 17 16 17M12.5 7.5A3.5 3.5 0 1 0 9 11A3.5 3.5 0 0 0 12.5 7.5M15.94 13A5.32 5.32 0 0 1 18 17V19H22V17S22 13.37 15.94 13M15 4A3.39 3.39 0 0 0 13.07 4.59A5 5 0 0 1 13.07 10.41A3.39 3.39 0 0 0 15 11A3.5 3.5 0 0 0 15 4Z" />
+              </svg>
+            </span>
+            <span>Player</span>
+          </a>
+        </li>
+        <li :class="{ 'is-active': tab === 1 }" @click="setTab(1)">
+          <a>
+            <span class="icon">
+              <svg style="width:24px;height:24px" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M4,5H20V7H4V5M4,9H20V11H4V9M4,13H20V15H4V13M4,17H14V19H4V17Z" />
+              </svg>
+            </span>
+            <span>Log</span>
+          </a>
+        </li>
+      </ul>
     </div>
+
+    <!-- player list -->
+    <div
+      v-if="tab === 0"
+      class="content"
+    >
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Callsign</th>
+            <th>Position</th>
+            <th>Aircraft</th>
+            <th>Altitude</th>
+            <th>Speed</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>Player1</th>
+            <th>ANA123</th>
+            <th>135.678, 45.678</th>
+            <th>A321</th>
+            <th>34000</th>
+            <th>520</th>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- logs -->
+    <div
+      v-if="tab === 1"
+      v-text="logLines"
+      class="content"
+      style="white-space: pre-wrap;"
+    />
   </div>
 </body>
 </html>
