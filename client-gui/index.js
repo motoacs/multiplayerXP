@@ -11,7 +11,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
-
+  mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile('app.html');
 
   mainWindow.webContents.openDevTools();
