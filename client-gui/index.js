@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 
 let mainWindow;
@@ -32,3 +32,19 @@ app.whenReady().then(() => {
 app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') app.quit();
 });
+
+
+ipcMain.handle('open-dir', async () => {
+  return await dialog.showOpenDialog(mainWindow, {
+    title: 'Select a "X-Plane 11" folder',
+    properties: ['openDirectory']
+  })
+    .then(
+      (ret) => {
+        if (ret.canceled) return '';
+        return ret.filePaths[0];
+      },
+      (err) => { return '' },
+    );
+});
+

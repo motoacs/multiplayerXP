@@ -4,6 +4,7 @@ const {
   dgram,
   WebSocket,
   crypto,
+  openDir,
 } = window.api;
 
 const encoder = new TextEncoder();
@@ -19,13 +20,37 @@ function init() {
     data: {
       logs: [],
       settingJsonPath: './setting.json',
-      settingJson: {},
+      settingJson: {
+        id: '',
+        pass: '',
+        server: '',
+        callsign: '',
+        xplaneDir: '',
+      },
+
+      // main settings
+      tempSettingData: {
+        id: '',
+        pass: '',
+        server: '',
+        callsign: '',
+        xplaneDir: '',
+      },
+
+      // notification
       notification: {
         text: '',
         type: '',
         timeoutId: null,
       },
+
+      // setting modal
+      settingModalShow: false,
+
+      // info area
       tab: 0,
+
+      // app status
       connected: false,
     },
 
@@ -44,6 +69,15 @@ function init() {
       this.log('Vue.js instance created');
       this.settingJson = await this.getJSON(this.settingJsonPath);
       this.log('setting.json loaded');
+
+      const x = this.settingJson.xplaneDir;
+      if (x == null || typeof x !== 'string' || x.length < 10) this.settingModalShow = true;
+      else this.tempSettingData.xplaneDir = x;
+
+      this.tempSettingData.id = this.settingJson.id;
+      this.tempSettingData.pass = this.settingJson.pass;
+      this.tempSettingData.server = this.settingJson.server;
+      this.tempSettingData.callsign = this.settingJson.callsign;
     },
 
     methods: {
@@ -72,6 +106,20 @@ function init() {
         this.tab = index;
       },
 
+      async onOpenDirClicked() {
+        this.tempSettingData.xplaneDir = await openDir();
+      },
+
+      onSettingsOkClicked() {
+        this.settingJson.xplaneDir = this.tempSettingData.xplaneDir;
+        this.settingModalShow = false;
+      },
+
+      onSettingsCancelClicked() {
+        this.tempSettingData.xplaneDir = this.settingJson.xplaneDir;
+        this.settingModalShow = false;
+      },
+
       notice(text = '', type = '', duration = 0) {
         if (this.notification.timeoutId !== null) clearTimeout(this.notification.timeoutId);
 
@@ -81,7 +129,7 @@ function init() {
         if (duration) this.notification.timeoutId = setTimeout(this.closeNotification.bind(this), duration);
       },
 
-      closeNotification() {
+      onCloseNotificationClicked() {
         this.notification.text = '';
       },
 

@@ -1,4 +1,4 @@
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 const fs = require('fs').promises;
 const dgram = require('dgram');
@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld('api', {
   dgram,
   WebSocket,
   crypto,
+  openDir: async () => await ipcRenderer.invoke('open-dir'),
 });
