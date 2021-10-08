@@ -1,10 +1,10 @@
 
 const {
-  fs,
-  dgram,
-  WebSocket,
-  crypto,
   openDir,
+  readJson,
+  writeJson,
+  start,
+  stop,
 } = window.api;
 
 const encoder = new TextEncoder();
@@ -66,40 +66,64 @@ function init() {
     },
 
     async created() {
-      this.log('Vue.js instance created');
-      this.settingJson = await this.getJSON(this.settingJsonPath);
-      this.log('setting.json loaded');
+      this.log('created: Vue.js instance created');
+      this.log('created: loading setting.json');
+      await this.loadConfig();
 
+      // open setting modal if "X-Plane 11" dir invalid
       const x = this.settingJson.xplaneDir;
-      if (x == null || typeof x !== 'string' || x.length < 10) this.settingModalShow = true;
-      else this.tempSettingData.xplaneDir = x;
-
-      this.tempSettingData.id = this.settingJson.id;
-      this.tempSettingData.pass = this.settingJson.pass;
-      this.tempSettingData.server = this.settingJson.server;
-      this.tempSettingData.callsign = this.settingJson.callsign;
+      if (x == null || typeof x !== 'string' || x.length < 10) {
+        this.log(`created: open setting modal: xplaneDir = ${this.settingJson.xplaneDir}`);
+        this.settingModalShow = true;
+      }
     },
 
     methods: {
       start() {
         this.connected = true;
         this.notice('Connected!', 'success', 8000);
-        this.log('connect');
+        this.log('start: connect');
       },
 
       stop() {
         this.connected = false;
         this.notice('Disconnected', '', 8000);
-        this.log('disconnect');
+        this.log('stop: disconnect');
       },
 
-      loadConfig() {
+      async loadConfig() {
+        const ret = await readJson();
 
+        if (ret == null) {
+          this.log('loadConfig: cannot load setting.json');
+          writeJson(JSON.stringify(this.settingJson, undefined, 2))
+          this.log('loadConfig: setting.json created by default data');
+        }
+        else {
+          this.settingJson = ret;
+          this.tempSettingData.id = (this.settingJson.id != null) ? this.settingJson.id : '';
+          this.tempSettingData.pass = (this.settingJson.pass != null) ? this.settingJson.pass : '';
+          this.tempSettingData.server = (this.settingJson.server != null) ? this.settingJson.server : '';
+          this.tempSettingData.callsign = (this.settingJson.callsign != null) ? this.settingJson.callsign : '';
+          this.tempSettingData.xplaneDir = (this.settingJson.xplaneDir != null) ? this.settingJson.xplaneDir : '';
+          this.log('loadConfig: setting.json loaded');
+        }
+
+        return Promise.resolve();
       },
 
-      saveConfig() {
-        this.notice('Saved', 'success', 8000);
-        this.log('config saved');
+      async saveConfig() {
+        this.settingJson = this.tempSettingData;
+        const ret = await writeJson(JSON.stringify(this.settingJson, undefined, 2));
+        console.log(ret);
+        if (ret) {
+          this.notice('Saved', 'success', 8000);
+          this.log('saveConfig: config saved');
+        }
+        else {console.log(120);
+          this.notice('Error: failed to save settings to "setting.json"', 'warning', 15000);
+          this.log('saveConfig: Error: failed write setting.json');
+        }
       },
 
       setTab(index) {
@@ -107,15 +131,27 @@ function init() {
       },
 
       async onOpenDirClicked() {
+        this.log('onOpenDirClicked: open directory dialog');
         this.tempSettingData.xplaneDir = await openDir();
+        this.log(`onOpenDirClicked: ret = ${this.tempSettingData.xplaneDir}`);
       },
 
-      onSettingsOkClicked() {
+      async onSettingsOkClicked() {
         this.settingJson.xplaneDir = this.tempSettingData.xplaneDir;
-        this.settingModalShow = false;
+        const ret = await writeJson(JSON.stringify(this.settingJson, undefined, 2));
+        if (ret) {
+          this.notice('Saved', 'success', 8000);
+          this.log('onSettingsOkClicked: config saved');
+          this.settingModalShow = false;
+        }
+        else {
+          this.notice('Error: failed to save settings to "setting.json"', 'warning', 15000);
+          this.log('onSettingsOkClicked: Error: failed write setting.json');
+        }
       },
 
       onSettingsCancelClicked() {
+        this.log('onSettingsCancelClicked: undo changes');
         this.tempSettingData.xplaneDir = this.settingJson.xplaneDir;
         this.settingModalShow = false;
       },
@@ -126,30 +162,12 @@ function init() {
         this.notification.text = text;
         this.notification.type = type;
 
-        if (duration) this.notification.timeoutId = setTimeout(this.closeNotification.bind(this), duration);
+        if (duration) this.notification.timeoutId = setTimeout(this.onCloseNotificationClicked.bind(this), duration);
       },
 
       onCloseNotificationClicked() {
         this.notification.text = '';
       },
-
-      getJSON(path) {
-        return new Promise(async (resolve) => {
-          let json;
-          try {
-            json = await fs.readFile(path, { encoding: 'utf8' });
-            json = JSON.parse(json);
-          }
-          catch (e) {
-            this.log(`getJSON: ERROR: ${e}`);
-            resolve(null);
-            return;
-          }
-
-          resolve(json);
-        });
-      },
-
 
       log(logTxt) {
         const d = new Date();

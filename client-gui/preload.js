@@ -1,15 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-const fs = require('fs').promises;
-const dgram = require('dgram');
-const { WebSocket } = require('ws');
-const crypto = require('crypto');
-
-
 contextBridge.exposeInMainWorld('api', {
-  fs,
-  dgram,
-  WebSocket,
-  crypto,
   openDir: async () => await ipcRenderer.invoke('open-dir'),
+  readJson : async () => await ipcRenderer.invoke('read-json'),
+  writeJson: async (dataTxt) => await ipcRenderer.invoke('write-json', dataTxt),
+  start: (s, t, i) => ipcRenderer(s, t, i),
+  stop : () => ipcRenderer.invoke(),
+  on       : (channel, callback) => ipcRenderer.on(channel, (event, ...args) => callback(...args)),
 });
