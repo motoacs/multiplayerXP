@@ -63,7 +63,7 @@ function createWindow() {
     },
   });
   mainWindow.setMenuBarVisibility(false);
-  mainWindow.loadFile('app.html');
+  mainWindow.loadFile('../app.html');
 
   // DevToops
   // mainWindow.webContents.openDevTools();
