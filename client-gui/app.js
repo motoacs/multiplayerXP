@@ -3,8 +3,6 @@ const {
   openDir,
   readJson,
   writeJson,
-  start,
-  stop,
 } = window.api;
 
 const encoder = new TextEncoder();
@@ -51,7 +49,7 @@ function init() {
       tab: 0,
 
       // app status
-      connected: false,
+      started: false,
     },
 
     computed: {
@@ -76,19 +74,57 @@ function init() {
         this.log(`created: open setting modal: xplaneDir = ${this.settingJson.xplaneDir}`);
         this.settingModalShow = true;
       }
+
+      // set IPC handler
+      api.on('connected', this.onWSConnected.bind(this));
+      api.on('disconnected', this.onWSDisconnected.bind(this));
+      api.on('closed', this.onWSClosed.bind(this));
+      api.on('auth-in-progress', this.onWSAuth.bind(this));
+      api.on('auth-success', this.onWSAuthSuccess.bind(this));
+      api.on('error', this.onWSError.bind(this));
+      api.on('ws-send', this.onWSSend.bind(this));
+      api.on('ws-recieve', this.onWSReceived.bind(this));
     },
 
     methods: {
       start() {
-        this.connected = true;
-        this.notice('Connected!', 'success', 8000);
-        this.log('start: connect');
+        // setting validation
+        for (const prop in this.tempSettingData) {
+          if (this.tempSettingData.hasOwnProperty(prop)) {
+            this.tempSettingData[prop] = this.tempSettingData[prop].trim();
+          }
+        }
+        const s = this.tempSettingData;
+
+        if (!s.server.startsWith('ws://')) {
+          this.notice('The server address must start with "ws://"', 'warning');
+          return;
+        }
+        if (s.id.length < 1) {
+          this.notice('ID is empty', 'warning');
+          return;
+        }
+        if (s.pass.length < 1) {
+          this.notice('Password is empty', 'warning');
+          return;
+        }
+        if (s.callsign.length < 1) {
+          this.notice('Callsign is empty', 'warning');
+          return;
+        }
+        if (!s.xplaneDir.endsWith('X-Plane 11')) {
+          this.notice('The "X-Plane 11" path is incorrect, please go to More Settings to set it', 'warning');
+          return;
+        }
+
+        this.started = true;
+        this.log('start: connecting...');
+        window.api.start(JSON.stringify(this.tempSettingData));
       },
 
       stop() {
-        this.connected = false;
-        this.notice('Disconnected', '', 8000);
-        this.log('stop: disconnect');
+        this.log('stop: disconnecting...');
+        window.api.stop();
       },
 
       async loadConfig() {
@@ -140,7 +176,7 @@ function init() {
         this.settingJson.xplaneDir = this.tempSettingData.xplaneDir;
         const ret = await writeJson(JSON.stringify(this.settingJson, undefined, 2));
         if (ret) {
-          this.notice('Saved', 'success', 8000);
+          this.notice('Saved', 'success', 5000);
           this.log('onSettingsOkClicked: config saved');
           this.settingModalShow = false;
         }
@@ -154,6 +190,46 @@ function init() {
         this.log('onSettingsCancelClicked: undo changes');
         this.tempSettingData.xplaneDir = this.settingJson.xplaneDir;
         this.settingModalShow = false;
+      },
+
+      // IPC handler
+      onWSConnected() {
+        this.log('onWSConnected: connected');
+        this.log('onWSConnected: waiting for authentication process');
+      },
+
+      onWSDisconnected() {
+        this.notice('Error: WebSocket connection disconnected. Reconnecting...', 'warning');
+        this.log('onWSDisconnected: connection disconnected');
+      },
+
+      onWSClosed() {
+        this.started = false;
+
+        this.notice('WebSocket connection closed', 'info', 30000);
+        this.log('onWSClosed: connection closed');
+      },
+
+      onWSAuth() {
+        this.log('onWSClosed: authentication in progress');
+      },
+
+      onWSAuthSuccess() {
+        this.notice('Connected!', 'success', 8000);
+        this.log('onWSClosed: authentication succees');
+      },
+
+      onWSError(err) {
+        this.notice(err, 'danger');
+        this.log(`onWSError: ${err}`);
+      },
+
+      onWSSend(msg) {
+        this.log(`onWSSend: WebSocket [Send] ${msg}`);
+      },
+
+      onWSReceived(msg) {
+        this.log(`onWSReceived: WebSocket [Received] ${msg}`);
       },
 
       notice(text = '', type = '', duration = 0) {
@@ -184,6 +260,20 @@ function init() {
         this.logs.unshift(text);
         console.log(text);
       },
+    },
+  });
+
+  // navigation bar
+  navbar = new Vue({
+    el: '#navbar',
+
+    data() {
+      return {
+        // navbar
+        menuOpen: false,
+        // modal
+        modalAboutOpen: false,
+      };
     },
   });
 }

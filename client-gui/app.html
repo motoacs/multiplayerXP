@@ -15,8 +15,57 @@
 
 </head>
 <body>
-  <div id="app" class="section">
+  <!-- navigation bar -->
+  <nav id="navbar" class="navbar" role="navigation" aria-label="main navigation">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="#">
+        <p class="title is-5">multiplayerXP</p>
+      </a>
+      <a
+        role="button"
+        class="navbar-burger"
+        :class="{ 'is-active': menuOpen }"
+        aria-label="menu"
+        aria-expanded="false"
+        @click="menuOpen = !menuOpen"
+      >
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </a>
+    </div>
 
+    <div :class="{ 'is-active': menuOpen }" class="navbar-menu">
+      <a class="navbar-item" @click="modalAboutOpen = true, menuOpen = false" >
+        About
+      </a>
+    </div>
+
+    <div class="modal" :class="{ 'is-active': modalAboutOpen}">
+      <div class="modal-background" @click="modalAboutOpen = false"></div>
+      <div class="modal-content">
+        <section class="section">
+          <div class="content">
+            <h1>multiplayerXP</h1>
+            <p>multiplayer client for X-Plane 11</p>
+            <p>aaaaaaaaaaaaa</p>
+            <p>
+              Github<br>
+              <a href="https://github.com/motoacs/multiplayerXP" target="_blank">https://github.com/motoacs/multiplayerXP</a>
+            </p>
+            <h3>Open Source License</h3>
+            <h4>Vue.js</h4>
+            <p>MIT</p>
+            <h4>Bulma Swatch</h4>
+            <p>MIT</p>
+          </div>
+        </section>
+      </div>
+      <button class="modal-close is-large" aria-label="close" @click="modalAboutOpen = false" ></button>
+    </div>
+  </nav>
+
+  <div id="app" class="section">
     <!-- Settings -->
     <div :class="{ 'is-active': settingModalShow }" class="modal">
       <div class="modal-background"></div>
@@ -39,14 +88,14 @@
 
           <div class="box">
             <div class="field">
-              <label class="label">"X-Plane 11" folder path</label>
+              <label class="label">Path to the "X-Plane 11" folder</label>
               <div class="field has-addons">
                 <div class="control is-expanded">
                   <input
                     v-model="tempSettingData.xplaneDir"
                     class="input"
                     type="text"
-                    placeholder="C:\Program Files\Steam\steamapps\common\X-Plane 11
+                    placeholder="C:\Program Files (x86)\Steam\steamapps\common\X-Plane 11
                   ">
                 </div>
                 <div class="control">
@@ -115,7 +164,7 @@
         <div class="control">
           <input
             v-model="tempSettingData.server"
-            :readonly="connected"
+            :readonly="started"
             class="input"
             type="text"
             placeholder="ws://example.com:8080"
@@ -129,7 +178,7 @@
           <p class="control has-icons-left has-icons-right">
             <input
               v-model="tempSettingData.id"
-              :readonly="connected"
+              :readonly="started"
               class="input"
               type="text"
               placeholder=""
@@ -144,7 +193,7 @@
           <p class="control is-expanded has-icons-left has-icons-right">
             <input
               v-model="tempSettingData.pass"
-              :readonly="connected"
+              :readonly="started"
               class="input"
               type="password"
               placeholder=""
@@ -163,7 +212,7 @@
         <div class="control">
           <input
             v-model="tempSettingData.callsign"
-            :readonly="connected"
+            :readonly="started"
             class="input"
             type="text"
             placeholder="ANA123"
@@ -176,7 +225,7 @@
         <!-- connect -->
         <p class="control">
           <button
-            :class="{ 'is-loading': connected }"
+            :class="{ 'is-loading': started }"
             @click="start"
             class="button is-primary"
             type="button"
@@ -194,7 +243,7 @@
         <p class="control">
           <button
             @click="stop"
-            :disabled="!connected"
+            :disabled="!started"
             class="button"
             type="button"
           >
@@ -227,7 +276,7 @@
         <p class="control">
           <button
             @click="loadConfig"
-            :disabled="connected"
+            :disabled="started"
             title="load settings"
             class="button"
             type="button"
@@ -241,7 +290,7 @@
         </p>
 
         <p class="control">
-          <button @click="settingModalShow = true" :disabled="connected" class="button">
+          <button @click="settingModalShow = true" :disabled="started" class="button">
             <span class="icon">
               <svg style="width:24px;height:24px" viewBox="0 0 24 24">
                 <path fill="currentColor" d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z" />

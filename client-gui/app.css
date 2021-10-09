@@ -15,3 +15,7 @@
 [v-cloak] {
   display: none;
 }
+
+body::-webkit-scrollbar {
+  display: none;
+}
