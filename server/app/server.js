@@ -1,9 +1,11 @@
 const fs = require('fs').promises;
 const { WebSocketServer, WebSocket } = require('ws');
 const crypto = require('crypto');
+const validator = require('validator');
+const xss = require('xss');
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-
 
 const SETTING_JSON_PATH = '../data/setting.json';
 
@@ -32,8 +34,9 @@ async function initialize() {
   // create server instance
   try {
     wss = new WebSocketServer({
-      port          : Number(setting.port),
-      clientTracking: true,
+      port      : Number(setting.port),
+      maxPayload: 8192,
+      // clientTracking: true,
     });
   }
   catch (e) {
@@ -50,7 +53,16 @@ async function initialize() {
     let password = '';
     let salt = '';
     let key = '';
-    let correctAnswers = [];
+    // account manipulation
+    const account = {
+      rsa: {
+        publicKey: '',
+        privateKey: '',
+      },
+      clientHash: '',
+      serverHash: '',
+      checkHash: '',
+    };
     let authTimer = null;
 
     // deny ip check
@@ -58,6 +70,7 @@ async function initialize() {
       log(`WebSocket: deny ip: [${ip}]`);
       ws.close();
       ws.terminate();
+      ws = null;
     }
 
     log(`WebSocket: new client connected: [${ip}]`);
@@ -66,31 +79,29 @@ async function initialize() {
     // =============================
     // authentication process
     // =============================
-    let challengeHash = crypto.createHash('sha256').update(crypto.randomBytes(32).toString('base64')).digest('hex');
-    // correct answers
-    setting.users.forEach((user) => {
-      correctAnswers.push(crypto.createHash('sha256').update(`${user}${challengeHash}${user}${user}`).digest('hex'));
+    let { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {
+      modulusLength: 4096,
     });
+    let pem = publicKey.export({type: 'pkcs1', format: 'pem'});
 
     // challenge
-    log(`WebSocket: start authentication: [${ip}] challenge=${challengeHash}`);
-    ws.send(`auth-required;${challengeHash}`);
-    challengeHash = null;
+    log(`WebSocket: start authentication: [${ip}] publicKey=${pem}`);
+    ws.send(`auth-required;${pem}`);
+    pem = null;
 
     // timeout
     authTimer = setTimeout(() => {
       if (token.length !== 64) {
         log(`WebSocket: ERROR: authentication timeout: [${ip}]`);
         ws.close();
-        ws.terminate();
       }
-    }, 2000);
+    }, 5000);
 
 
     // message listener
     ws.on('message', (msg) => {
+      // validation
       try {
-        // validation
         msg = String(msg);
         if (msg == null || msg.length === 0) return;
       }
@@ -98,47 +109,151 @@ async function initialize() {
         return;
       }
 
+      // sanitize
+
       // authentication
       if (msg.startsWith('auth-request;')) {
-        const idx = correctAnswers.indexOf(msg.split(';')[1]);
-        // ok
-        if (idx >= 0) {
-          correctAnswers = null;
-          id = setting.users[idx];
-          token = crypto.createHash('sha256').update(crypto.randomBytes(32).toString('base64')).digest('hex');
-          password = crypto.createHash('sha256').update(`${id}${id}${token}${token}`).digest('hex');
-          salt = crypto.createHash('sha256').update(`${token}${id}${token}${id}`).digest('hex');
-          key = crypto.scryptSync(password, salt, 32);
+        const encryptedPayload = msg.split(';')[1];
+        let payload
 
-          clients.push({
-            ws,
-            id,
-            encrypt: (msg) => {
-              const iv = crypto.randomBytes(16);
-              const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-              const data = Buffer.from(msg);
-              let encryptData = cipher.update(data);
-              encryptData = Buffer.concat([iv, encryptData, cipher.final()]).toString('base64');
+        try {
+          payload = crypto.privateDecrypt(
+            {
+              key :privateKey,
+              padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+              oaepHash: "sha256",
+            },
+            Buffer.from(encryptedPayload, 'base64'),
+          );
+        }
+        catch (e) {
+          log(`WebSocket: authentication Error: decrypt failed`);
+          ws.send('auth-result;400');
+          ws.close();
+        }
+        log(`WebSocket: authentication: ${String(payload)}`)
+        const [receivedId, receivedPass, aesPass, aesSalt] = String(payload).split(';');
 
-              return encryptData;
-            }
-          });
-
-
+        const user = setting.users.find((user) => user.id === receivedId);
+        // id not found
+        if (user == null) {
+          log(`WebSocket: authentication failed: [${ip}] [404] ${receivedId} ${receivedPass}`);
+          ws.send('auth-result;404');
+          ws.close();
           clearTimeout(authTimer);
-
-          log(`WebSocket: authentication succeed: [${ip}] user=${id} token=${token}`);
-          ws.send(`auth-success;${token}`);
+          return;
+        }
+        // incorrect password
+        if (user.pass !== receivedPass) {
+          log(`WebSocket: authentication failed: [${ip}] [403] ${receivedId} ${receivedPass}`);
+          ws.send('auth-result;403');
+          ws.close();
+          clearTimeout(authTimer);
+          return;
         }
 
-        // ng
-        else {
-          correctAnswers = null;
-          clearTimeout(authTimer);
+        // success
+        id = receivedId;
+        key = crypto.scryptSync(aesPass, aesSalt, 32);
 
-          log(`WebSocket: authentication failed: [${ip}] ${msg}`);
+        clients.push({
+          ws,
+          id,
+          encrypt: (msg) => {
+            const iv = crypto.randomBytes(16);
+            const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+            let encryptData = cipher.update(Buffer.from(msg));
+            encryptData = Buffer.concat([iv, encryptData, cipher.final()]).toString('base64');
+
+            return encryptData;
+          }
+        });
+
+        clearTimeout(authTimer);
+
+        log(`WebSocket: authentication succeed: [${ip}] user=${id}`);
+        ws.send('auth-result;200');
+      }
+
+      // account manipulation request
+      else if (msg.startsWith('account-getkey')) {
+        log('WebSocket: account-getkey');
+        account.clientHash = msg.split(';')[1];
+        account.rsa = crypto.generateKeyPairSync('rsa', {
+          modulusLength: 2048,
+        });
+        account.serverHash = crypto.createHash('sha256').update(crypto.randomBytes(32).toString('base64')).digest('hex');
+        account.checkHash = crypto.createHash('sha256').update(`${account.serverHash}${account.serverHash}${account.clientHash}${account.serverHash}`).digest('hex');
+
+        // send RSA key and hash
+        log(`WebSocket: account-getkey: account-key;${account.rsa.publicKey.export({type: 'pkcs1', format: 'pem'})};${account.serverHash}`);
+        ws.send(`account-key;${account.rsa.publicKey.export({type: 'pkcs1', format: 'pem'})};${account.serverHash}`);
+      }
+
+      // create or delete account
+      else if (msg.startsWith('account-create') || msg.startsWith('account-delete')) {
+        log(`WebSocket: account-create: ${msg}`);
+        const encryptedPayload = msg.split(';')[1];
+        // decrypt payload data
+        const payload = crypto.privateDecrypt(
+          {
+            key :account.rsa.privateKey,
+            padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+            oaepHash: "sha256",
+          },
+          Buffer.from(encryptedPayload, 'base64'),
+        );
+        log(`WebSocket: account-create: ${payload}`);
+        const [id, pass, checkHash] = String(payload).split(';');
+        log(`WebSocket: account-create: ${id} ${pass} ${checkHash}`);
+
+        // invalid check hash
+        if (checkHash !== account.checkHash) {
+          log('WebSocket: account-manipulation: ERROR: invalid checkHash');
+          ws.send('account-result;401');
           ws.close();
-          ws.terminate();
+        }
+
+        // create account
+        if (msg.startsWith('account-create')) {
+          // conflict user name
+          if (setting.users.some((user) => user.id === id)) {
+            ws.send('account-result;409');
+            ws.close();
+          }
+          else {
+            setting.users.push({
+              id,
+              pass,
+            });
+            writeSettingJson();
+            ws.send('account-result;200');
+          }
+        }
+
+        // delete account
+        else if (msg.startsWith('account-delete')) {
+          // user not found
+          if (!setting.users.some((user) => user.id === id)) {
+            ws.send('account-result;404');
+            ws.close();
+            return;
+          }
+
+          // invalid password
+          if (setting.users.find((user) => user.id === id).pass !== pass) {
+            ws.send('account-result;403');
+            ws.close();
+            return;
+          }
+
+          // delete
+          setting.users.splice(
+            setting.users.findIndex((user) => user.id === id),
+            1,
+          );
+          writeSettingJson();
+          ws.send('account-result;200');
         }
       }
 
@@ -149,42 +264,29 @@ async function initialize() {
         try {
           if (msg === '') throw new Error('invalid message');
 
-          msg = msg.split(';');
-          if (msg[0] !== 'update-pos') throw new Error('invalid command');
-          else if (msg[1] !== token) throw new Error('invalid token');
-          else if (!(msg[2].length > 0)) throw new Error('invalid posdata');
+          const msgArr = msg.split(';');
+          if (msgArr[0] !== 'update-pos') throw new Error('invalid command');
+          else if (msgArr[1] !== id) throw new Error('invalid id');
+          else if (!(msgArr[2].length > 0)) throw new Error('invalid posdata');
         }
         catch (e) {
-          log(`WebSocket: ERROR: ${e}:  [${ip}] ${id}: ${msg}`);
+          log(`WebSocket: ERROR: ${e}:  [${ip}] ${msg}`);
           ws.close();
-          ws.terminate();
           return;
         }
 
         // valid message
-        log(`WebSocket: update-pos: ${id}: ${msg[2]}`);
+        log(`WebSocket: ${msg}`);
 
         clients.forEach((client) => {
-          const encryptData = client.encrypt(`update-pos;${msg[2]}`);
-          if (client.ws !== ws && client.ws.readyState === WebSocket.OPEN) {
+          if (client.id !== id && client.ws.readyState === WebSocket.OPEN) {
+            const encryptData = client.encrypt(msg);
             client.ws.send(encryptData);
           }
         });
-
-        // // encrypt message
-        // const encryptData = encrypt(`update-pos;${msg[2]}`);
-
-        // // broadcast posdata excluding itself
-        // wss.clients.forEach((client) => {
-        //   if (client !== ws && client.readyState === WebSocket.OPEN) {
-        //     client.send(encryptData);
-        //   }
-        // });
       }
     });
 
-    // connection keep alive (returns pong automatically)
-    // ws.on('ping', () => log(`WebSocket: ping: ${id}`));
 
     ws.on('close', (code, reason) => {
       log(`WebSocket: connection closed: [${ip}] ${id} token=${token} code=${code} reason=${decoder.decode(reason)}`);
@@ -194,16 +296,6 @@ async function initialize() {
       log(`WebSocket: ERROR: connection error: ${JSON.stringify(e)}: [${ip}] ${id} token=${token}`);
     });
 
-
-    // function encrypt(msg) {
-    //   const iv = crypto.randomBytes(16);
-    //   const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-    //   const data = Buffer.from(msg);
-    //   let encryptData = cipher.update(data);
-    //   encryptData = Buffer.concat([iv, encryptData, cipher.final()]).toString('base64');
-
-    //   return encryptData;
-    // }
 
     function decrypt(encryptData, iv) {
       let msg;
@@ -279,7 +371,7 @@ function saveLogs() {
 
 
 function getJSON(path) {
-  return new Promise(async (resolve, reject) => {
+  return new Promise(async (resolve) => {
     let json;
     try {
       json = await fs.readFile(path);
@@ -292,4 +384,15 @@ function getJSON(path) {
     }
     resolve(json);
   });
+}
+
+async function writeSettingJson() {
+  try {
+    await fs.writeFile(SETTING_JSON_PATH, JSON.stringify(setting, undefined, 2));
+  }
+  catch (e) {
+    log(`writeJSON: ERROR: ${JSON.stringify(e)}`);
+    return;
+  }
+  return;
 }

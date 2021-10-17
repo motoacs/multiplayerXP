@@ -36,8 +36,14 @@
     </div>
 
     <div :class="{ 'is-active': menuOpen }" class="navbar-menu">
-      <a class="navbar-item" @click="modalAboutOpen = true, menuOpen = false" >
+      <a @click="onOpenAccountClicked" class="navbar-item" target="_blank">
+        Create / Delete Account
+      </a>
+      <a class="navbar-item" @click="modalAboutOpen = true, menuOpen = false">
         About
+      </a>
+      <a class="navbar-item" target="_blank" href="https://github.com/motoacs/multiplayerXP#readme">
+        Help
       </a>
     </div>
 

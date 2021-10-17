@@ -4,6 +4,8 @@ const fs = require('fs').promises;
 const dgram = require('dgram');
 const { WebSocket } = require('ws');
 const crypto = require('crypto');
+const validator = require('validator');
+const xss = require('xss');
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -21,9 +23,9 @@ let sender;
 // websocket client
 let ws;
 let ping;
-let stopPing = true;
+// WebSocket session has been established
+let wsSession = false;
 let wsRetry = 0;
-let wsToken = '';
 let wsPassword = '';
 let wsSalt = '';
 let wsKey = '';
@@ -65,7 +67,7 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile('../app.html');
 
-  // DevToops
+  // DevTools
   // mainWindow.webContents.openDevTools();
 
   mainWindow.on('closed', () => {
@@ -166,6 +168,106 @@ ipcMain.handle('stop', () => {
 
 });
 
+// Open create/delete account window
+ipcMain.handle('open-account', (evt, settingTxt) => {
+  console.log("🚀 ~ file: index.js ~ line 171 ~ ipcMain.handle ~ settingTxt", settingTxt)
+  setting = JSON.parse(settingTxt);
+
+  log('Open Account Window');
+  let accountWindow = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+  accountWindow.setMenuBarVisibility(false);
+  accountWindow.loadFile('../account.html');
+  // DevTools
+  // accountWindow.webContents.openDevTools();
+
+  accountWindow.on('closed', () => {
+    accountWindow = null;
+  });
+});
+
+// return setting data to account window
+ipcMain.handle('get-settings', () => {
+  return Promise.resolve(JSON.stringify(setting));
+});
+
+
+// create / delete account
+ipcMain.handle('manipulate-account', (evt, mode, settingTxt) => {
+  return new Promise((resolve) => {
+    let clientHash = crypto.createHash('sha256').update(crypto.randomBytes(32).toString('base64')).digest('hex');
+    let serverHash, checkHash, rsaPubKey;
+
+    setting = JSON.parse(settingTxt);
+
+    // create WebSocket client
+    ws = new WebSocket(setting.server);
+
+    // connection open
+    ws.on('open', () => {
+      log('manipulate-account: WebSocket open: send key request');
+      ws.send(`account-getkey;${clientHash}`);
+    });
+
+    // message received
+    ws.on('message', (msg) => {
+      log(`manipulate-account: [Recieve] ${msg}`);
+      const msgArr = String(msg).split(';');
+
+      // send request
+      if (msgArr[0] === 'account-key') {
+        rsaPubKey = msgArr[1];
+        serverHash = msgArr[2];
+        checkHash = crypto.createHash('sha256').update(`${serverHash}${serverHash}${clientHash}${serverHash}`).digest('hex');
+        // hashing password
+        const pwHash = crypto.createHash('sha256').update(setting.pass).digest('hex');
+        // payload data
+        const payload = `${setting.id};${pwHash};${checkHash}`;
+        // encrypt with RSA
+        const encryptedPayload = crypto.publicEncrypt(
+          {
+            key: rsaPubKey,
+            padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+            oaepHash: 'sha256',
+          },
+          Buffer.from(payload),
+        ).toString('base64');
+
+        const sendText = `account-${mode};${encryptedPayload}`;
+        log(`manipulate-account: [Send] ${sendText}`);
+
+        // send a request to the server
+        ws.send(sendText);
+      }
+
+      // request result
+      else if (msgArr[0] === 'account-result') {
+        // resolve by server's response code
+        resolve(msgArr[1]);
+        ws.close();
+      }
+    });
+
+    ws.on('error', () => {
+      log('manipulate-account: ws error');
+      ws.close();
+      resolve('0');
+    });
+    ws.on('close', () => {
+      log('manipulate-account: ws close');
+      ws = null;
+      resolve('0');
+    });
+  });
+
+});
+
+
 
 // send IPC Message to the Renderer Window
 function sendIpcMessage(channel, dataTxt) {
@@ -197,7 +299,9 @@ async function initClient() {
   });
 
     // create WebSocket connection
-  ws = new WebSocket(setting.server);
+  ws = new WebSocket(setting.server, {
+    maxPayload: 8192
+  });
   // set WebSocket event handler
   // open
   ws.on('open', onWSConnected);
@@ -207,12 +311,7 @@ async function initClient() {
   ws.on('close', onWSDisconnected);
   // error
   ws.on('error', onWSError);
-
-  // WebSocket connection keep alive
-  pingIntervalId = setInterval(() => {
-    pingStart = Date.now();
-    if (!stopPing) ws.ping();
-  }, 10000);
+  // ping
   ws.on('pong', () => log(`WebSocket: ping ${Date.now() - pingStart}`));
 
   // start main process
@@ -251,7 +350,7 @@ async function main() {
     // if valid data
     if (line.length > 0 && !line.startsWith('{')) {
       line = line.replace(',USER,', `,${setting.callsign},`);
-      log(`sending: ${line}`);
+      log(`Main: sending: ${line}`);
       sendToServer(line);
       // for debug
       // sendToLiveTraffic(line);
@@ -310,7 +409,7 @@ function sendToServer(msg) {
   }
 
   // encrypt
-  const encryptData = encrypt(`update-pos;${wsToken};${msg}`);
+  const encryptData = encrypt(`update-pos;${setting.id};${msg}`);
   // console.log(encryptData);
   ws.send(encryptData);
 
@@ -352,7 +451,8 @@ function wsDisconnect(reason) {
     }
     finally {
       ws = null;
-      stopPing = true;
+      clearInterval(pingIntervalId);
+      clearInterval(mainIntervalId);
     }
   }
 }
@@ -378,7 +478,12 @@ function wsReconnect() {
 function onWSConnected() {
   log('WebSocket: connected');
   log('WebSocket: waiting for authentication process');
-  stopPing = false;
+
+  // WebSocket connection keep alive
+  pingIntervalId = setInterval(() => {
+    pingStart = Date.now();
+    ws.ping();
+  }, 10000);
 }
 
 
@@ -386,7 +491,7 @@ function onWSMsgReceived(msg) {
   // validation
   try {
     msg = String(msg);
-    if (msg == null || msg.length === 0 || msg.length > 512) return;
+    if (msg == null || msg.length === 0) return;
   }
   catch (e) {
     return;
@@ -399,34 +504,59 @@ function onWSMsgReceived(msg) {
 
     msg = msg.split(';');
     log('WebSocket: start authentication');
-    const answer = crypto.createHash('sha256').update(`${setting.id}${msg[1]}${setting.id}${setting.id}`).digest('hex');
-    ws.send(`auth-request;${answer}`);
-    log(`WebSocket: [Send] auth-request;${msg}`);
+
+    wsPassword = crypto.createHash('sha256').update(crypto.randomBytes(32).toString('base64')).digest('hex');
+    wsSalt = crypto.createHash('sha256').update(crypto.randomBytes(32).toString('base64')).digest('hex');
+    wsKey = crypto.scryptSync(wsPassword, wsSalt, 32);
+
+    const payload = `${setting.id};${crypto.createHash('sha256').update(setting.pass).digest('hex')};${wsPassword};${wsSalt}`;
+    log(payload);
+    const encryptedPayload =  crypto.publicEncrypt(
+      {
+        key: msg[1],
+        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: 'sha256',
+      },
+      Buffer.from(payload),
+    ).toString('base64');
+
+    ws.send(`auth-request;${encryptedPayload}`);
+    log(`WebSocket: [Send] auth-request;${encryptedPayload}`);
   }
 
-  else if (msg.startsWith('auth-success;')) {
+  else if (msg.startsWith('auth-result;')) {
     log(`WebSocket: [Receive] ${msg}`);
-    log('WebSocket: authentication succeeded!');
-    sendIpcMessage('auth-success');
-
     msg = msg.split(';');
-    wsToken = msg[1];
-    wsPassword = crypto.createHash('sha256').update(`${setting.id}${setting.id}${wsToken}${wsToken}`).digest('hex');
-    wsSalt = crypto.createHash('sha256').update(`${wsToken}${setting.id}${wsToken}${setting.id}`).digest('hex');
-    wsKey = crypto.scryptSync(wsPassword, wsSalt, 32);
+    sendIpcMessage('auth-result', msg[1]);
+
+    // error
+    if (msg[1] !== '200') {
+      // disconnect
+      disconnecting = true;
+      wsDisconnect('atuh-error');
+    }
+
+    // OK
+    else {
+      wsSession = true;
+    }
   }
 
   // encrypt data
   else {
+    log(`WebSocket: msg=${msg}`);
     msg = decrypt(msg);
-
+    log(`WebSocket: msg=${msg}`);
+    let msgArr;
     // validation
     try {
       if (msg === '') throw new Error('dectypt error');
 
-      msg = msg.split(';');
-      if (msg[0] !== 'update-pos') throw new Error('invalid command');
-      else if (typeof msg[1] !== 'string' && msg[1].length === 0) throw new Error('invalid data');
+      msgArr = msg.split(';');
+      log(`WebSocket: msg=${msg}`);
+      if (msgArr[0] !== 'update-pos') throw new Error('invalid command');
+      else if (typeof msgArr[1] !== 'string' && msgArr[1].length === 0) throw new Error('invalid id');
+      else if (typeof msgArr[2] !== 'string' && msgArr[2].length === 0) throw new Error('invalid data');
     }
     catch (e) {
       log(`WebSocket: ERROR: ${e}`);
@@ -434,19 +564,17 @@ function onWSMsgReceived(msg) {
     }
 
     // Receive multiplayer's positions
-    log(`WebSocket: [Receive] ${msg.join(';')}`);
-    sendToLiveTraffic(msg[1]);
-    sendIpcMessage('ws-recieve', msg[1]);
+    log(`WebSocket: [Receive] ${msg}`);
+    sendToLiveTraffic(msgArr[2]);
+    sendIpcMessage('ws-recieve', msg);
   }
 
   wsRetry = 0;
-
 }
 
 function onWSDisconnected(code, reason) {
   log(`WebSocket: connection closed: code=${code} reason=${decoder.decode(reason)}`);
   ws = null;
-  stopPing = true;
 
   // unexpected disconnect
   if (!disconnecting) {
@@ -500,7 +628,7 @@ function decrypt(encryptData) {
     msg = Buffer.concat([data, decipher.final()]).toString('utf8');
   }
   catch (e) {
-    // console.log(e);
+    console.log(e);
     msg = '';
   }
 

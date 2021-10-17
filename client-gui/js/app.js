@@ -3,6 +3,7 @@ const {
   openDir,
   readJson,
   writeJson,
+  openAccount,
 } = window.api;
 
 const encoder = new TextEncoder();
@@ -166,6 +167,10 @@ function init() {
         this.tab = index;
       },
 
+      onOpenAccountClicked() {
+        openAccount(JSON.stringify(this.tempSettingData));
+      },
+
       async onOpenDirClicked() {
         this.log('onOpenDirClicked: open directory dialog');
         this.tempSettingData.xplaneDir = await openDir();
@@ -274,6 +279,12 @@ function init() {
         // modal
         modalAboutOpen: false,
       };
+    },
+
+    methods: {
+      onOpenAccountClicked() {
+        app.onOpenAccountClicked();
+      },
     },
   });
 }

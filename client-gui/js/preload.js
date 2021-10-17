@@ -6,5 +6,8 @@ contextBridge.exposeInMainWorld('api', {
   writeJson: async (dataTxt) => await ipcRenderer.invoke('write-json', dataTxt),
   start: (settingTxt) => ipcRenderer.invoke('start', settingTxt),
   stop : () => ipcRenderer.invoke('stop'),
+  openAccount: (settingTxt) => ipcRenderer.invoke('open-account', settingTxt),
+  getSetting: () => ipcRenderer.invoke('get-settings'),
+  manipulateAccount: (mode, settingTxt) => ipcRenderer.invoke('manipulate-account', mode, settingTxt),
   on       : (channel, callback) => ipcRenderer.on(channel, (event, ...args) => callback(...args)),
 });
