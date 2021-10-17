@@ -35,7 +35,7 @@ async function initialize() {
   try {
     wss = new WebSocketServer({
       port      : Number(setting.port),
-      maxPayload: 8192,
+      maxPayload: 1024,
       // clientTracking: true,
     });
   }

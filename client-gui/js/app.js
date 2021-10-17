@@ -81,7 +81,7 @@ function init() {
       api.on('disconnected', this.onWSDisconnected.bind(this));
       api.on('closed', this.onWSClosed.bind(this));
       api.on('auth-in-progress', this.onWSAuth.bind(this));
-      api.on('auth-success', this.onWSAuthSuccess.bind(this));
+      api.on('auth-result', this.onWSAuthResult.bind(this));
       api.on('error', this.onWSError.bind(this));
       api.on('ws-send', this.onWSSend.bind(this));
       api.on('ws-recieve', this.onWSReceived.bind(this));
@@ -211,17 +211,32 @@ function init() {
       onWSClosed() {
         this.started = false;
 
-        this.notice('WebSocket connection closed', 'info', 30000);
+        // this.notice('WebSocket connection closed', 'info', 30000);
         this.log('onWSClosed: connection closed');
       },
 
       onWSAuth() {
-        this.log('onWSClosed: authentication in progress');
+        this.log('onWSAuth: authentication in progress');
       },
 
-      onWSAuthSuccess() {
-        this.notice('Connected!', 'success', 8000);
-        this.log('onWSClosed: authentication succees');
+      onWSAuthResult(code) {
+        switch (code) {
+          case '200':
+            this.notice('Connected!', 'success', 8000);
+            break;
+          case '400':
+            this.notice('Error: Cipher error', 'danger');
+            break;
+          case '403':
+            this.notice('Error: Incorrect password', 'danger');
+            break;
+          case '404':
+            this.notice('Error: Unknown ID', 'danger');
+            break;
+          default:
+
+        }
+        this.log(`onWSAuthResult: authentication: ${code}`);
       },
 
       onWSError(err) {

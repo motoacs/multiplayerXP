@@ -150,9 +150,9 @@ ipcMain.handle('write-json', async (evt, dataTxt) => {
 
 // on start button clicked on gui
 ipcMain.handle('start', (evt, newSettingTxt) => {
-  console.log("🚀 ~ file: index.js ~ line 147 ~ ipcMain.handle ~ newSettingTxt", newSettingTxt)
+  // console.log("🚀 ~ file: index.js ~ line 147 ~ ipcMain.handle ~ newSettingTxt", newSettingTxt)
   setting = JSON.parse(newSettingTxt);
-  console.log("🚀 ~ file: index.js ~ line 144 ~ ipcMain.handle ~ setting", setting);
+  // console.log("🚀 ~ file: index.js ~ line 144 ~ ipcMain.handle ~ setting", setting);
 
   log('start');
   initClient();
@@ -170,7 +170,7 @@ ipcMain.handle('stop', () => {
 
 // Open create/delete account window
 ipcMain.handle('open-account', (evt, settingTxt) => {
-  console.log("🚀 ~ file: index.js ~ line 171 ~ ipcMain.handle ~ settingTxt", settingTxt)
+  // console.log("🚀 ~ file: index.js ~ line 171 ~ ipcMain.handle ~ settingTxt", settingTxt)
   setting = JSON.parse(settingTxt);
 
   log('Open Account Window');
@@ -216,7 +216,7 @@ ipcMain.handle('manipulate-account', (evt, mode, settingTxt) => {
 
     // message received
     ws.on('message', (msg) => {
-      log(`manipulate-account: [Recieve] ${msg}`);
+      log(`manipulate-account: [Recieve] ${msg.replace(/\n/g, '')}`);
       const msgArr = String(msg).split(';');
 
       // send request
@@ -300,7 +300,7 @@ async function initClient() {
 
     // create WebSocket connection
   ws = new WebSocket(setting.server, {
-    maxPayload: 8192
+    maxPayload: 1024
   });
   // set WebSocket event handler
   // open
@@ -364,11 +364,11 @@ async function main() {
 async function updateLatestFilePath() {
   // ls
   const dir = await fs.readdir(`${setting.xplaneDir}\\Output\\`);
-  console.log("🚀 ~ file: index.js ~ line 205 ~ updateLatestFilePath ~ dir", dir);
+  // console.log("🚀 ~ file: index.js ~ line 205 ~ updateLatestFilePath ~ dir", dir);
 
   // filtering csv files
   const csvFilesArr = dir.filter((fileName) => fileName.match(CSV_FILENAME));
-  console.log("🚀 ~ file: index.js ~ line 209 ~ updateLatestFilePath ~ csvFilesArr", csvFilesArr);
+  // console.log("🚀 ~ file: index.js ~ line 209 ~ updateLatestFilePath ~ csvFilesArr", csvFilesArr);
   // latest
   latestFilePath = `${setting.xplaneDir}\\Output\\${csvFilesArr.pop()}`;
   log(`updateLatestFilePath: ${latestFilePath}`);
@@ -424,7 +424,7 @@ function sendToServer(msg) {
  */
 function sendToLiveTraffic(msg) {
   sender.send(msg, 49003, (ret) => {
-      if (ret === null) log('sent');
+      if (ret === null) log('sendToLiveTraffic: Send');
       else log(ret);
   });
 }
@@ -499,7 +499,7 @@ function onWSMsgReceived(msg) {
 
   // authentication
   if (msg.startsWith('auth-required;')) {
-    log(`WebSocket: [Receive] ${msg}`);
+    log(`WebSocket: [Receive] ${msg.replace(/\n/g, '')}`);
     sendIpcMessage('auth-in-progress');
 
     msg = msg.split(';');
@@ -510,7 +510,7 @@ function onWSMsgReceived(msg) {
     wsKey = crypto.scryptSync(wsPassword, wsSalt, 32);
 
     const payload = `${setting.id};${crypto.createHash('sha256').update(setting.pass).digest('hex')};${wsPassword};${wsSalt}`;
-    log(payload);
+    log(`WebSocket: authentication payload: ${payload}`);
     const encryptedPayload =  crypto.publicEncrypt(
       {
         key: msg[1],
@@ -520,8 +520,8 @@ function onWSMsgReceived(msg) {
       Buffer.from(payload),
     ).toString('base64');
 
-    ws.send(`auth-request;${encryptedPayload}`);
     log(`WebSocket: [Send] auth-request;${encryptedPayload}`);
+    ws.send(`auth-request;${encryptedPayload}`);
   }
 
   else if (msg.startsWith('auth-result;')) {
@@ -544,27 +544,26 @@ function onWSMsgReceived(msg) {
 
   // encrypt data
   else {
-    log(`WebSocket: msg=${msg}`);
+    // log(`WebSocket: [Receive] msg=${msg}`);
     msg = decrypt(msg);
-    log(`WebSocket: msg=${msg}`);
     let msgArr;
     // validation
     try {
       if (msg === '') throw new Error('dectypt error');
 
       msgArr = msg.split(';');
-      log(`WebSocket: msg=${msg}`);
+      // log(`WebSocket: msg=${msg}`);
       if (msgArr[0] !== 'update-pos') throw new Error('invalid command');
       else if (typeof msgArr[1] !== 'string' && msgArr[1].length === 0) throw new Error('invalid id');
       else if (typeof msgArr[2] !== 'string' && msgArr[2].length === 0) throw new Error('invalid data');
     }
     catch (e) {
-      log(`WebSocket: ERROR: ${e}`);
+      log(`WebSocket: message error: ${e}`);
       return;
     }
 
     // Receive multiplayer's positions
-    log(`WebSocket: [Receive] ${msg}`);
+    log(`WebSocket: [Receive] ${msg.replace(/\n/g, '')}`);
     sendToLiveTraffic(msgArr[2]);
     sendIpcMessage('ws-recieve', msg);
   }
@@ -628,7 +627,7 @@ function decrypt(encryptData) {
     msg = Buffer.concat([data, decipher.final()]).toString('utf8');
   }
   catch (e) {
-    console.log(e);
+    log(e);
     msg = '';
   }
 
