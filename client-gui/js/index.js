@@ -217,7 +217,7 @@ ipcMain.handle('manipulate-account', (evt, mode, settingTxt) => {
 
     // message received
     ws.on('message', (msg) => {
-      log(`manipulate-account: [Recieve] ${msg.replace(/\n/g, '')}`);
+      log(`manipulate-account: [Recieve] ${String(msg).replace(/\n/g, '')}`);
       const msgArr = String(msg).split(';');
 
       // send request
