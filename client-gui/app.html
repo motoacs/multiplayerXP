@@ -366,13 +366,16 @@
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <th>Player1</th>
-            <th>ANA123</th>
-            <th>135.678, 45.678</th>
-            <th>A321</th>
-            <th>34000</th>
-            <th>520</th>
+          <tr
+            v-for="player in players"
+            :key="player.id"
+          >
+            <th>{{ player.id }}</th>
+            <th>{{ player.callsign }}</th>
+            <th>{{ player.longitude }}, {{ player.latitude }}</th>
+            <th>{{ player.aircraft }}</th>
+            <th>{{ player.altitude }}</th>
+            <th>{{ player.speed }}</th>
           </tr>
         </tbody>
       </table>

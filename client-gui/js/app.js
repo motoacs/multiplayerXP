@@ -48,6 +48,18 @@ function init() {
 
       // info area
       tab: 0,
+      // player list
+      players: [
+        // {
+        //   id      : 'Dummy',
+        //   callsign: 'DMY012',
+        //   longitude: '',
+        //   latitude: '',
+        //   aircraft: '',
+        //   altitude: '',
+        //   speed   : '',
+        // }
+      ],
 
       // app status
       started: false,
@@ -250,6 +262,45 @@ function init() {
 
       onWSReceived(msg) {
         this.log(`onWSReceived: WebSocket [Received] ${msg}`);
+        const [cmd, playerId, posdata] = msg.split(';');
+        const [
+          aitfc,
+          icao,
+          latitude,
+          longitude,
+          altitude,
+          verticalSpeed,
+          airborneFlg,
+          track,
+          speed,
+          callsign,
+          aircraft,
+          registry,
+          dep,
+          arr,
+          time,
+        ] = posdata.split(',');
+
+        const idx = this.players.findIndex((data) => data.id === playerId);
+
+        if (idx) {
+          this.players[idx].latitude = latitude;
+          this.players[idx].callsign = callsign;
+          this.players[idx].longitude = longitude;
+          this.players[idx].aircraft = aircraft;
+          this.players[idx].speed = speed;
+        }
+        else {
+          this.players.push({
+            id: playerId,
+            callsign,
+            longitude,
+            latitude,
+            aircraft,
+            speed,
+          });
+          this.players.sort((player) => player.id);
+        }
       },
 
       notice(text = '', type = '', duration = 0) {

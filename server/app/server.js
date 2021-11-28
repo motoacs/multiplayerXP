@@ -14,6 +14,7 @@ let wss;
 let logs = [];
 let clients = [];
 
+Vue.prototype.$sanitize = filterXSS;
 
 async function initialize() {
   // get setting.json

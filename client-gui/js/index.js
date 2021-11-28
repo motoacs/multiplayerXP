@@ -11,7 +11,8 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 const SETTING_JSON_PATH = './setting.json';
-const CSV_FILENAME = /LTExportFD - 20\d\d-\d\d-\d\d \d\d\.\d\d\.\d\d.csv/;
+// const CSV_FILENAME = /LTExportFD - 20\d\d-\d\d-\d\d \d\d\.\d\d\.\d\d.csv/;
+const CSV_FILENAME = /LTExportFD.csv/;
 
 // rate which new csv file explore
 const SCAN_DIR_RATE = 3;
