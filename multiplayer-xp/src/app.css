@@ -1,0 +1,21 @@
+/* transitions */
+
+.fade-enter-active, .fade-leave-active {
+  transition: all .5s;
+}
+
+.fade-enter, .fade-leave-to {
+  opacity: 0;
+  height: 0px !important;
+  margin-bottom: 0px !important;
+  padding-top: 0px !important;
+  padding-bottom: 0px !important;
+}
+
+[v-cloak] {
+  display: none;
+}
+
+body::-webkit-scrollbar {
+  display: none;
+}
