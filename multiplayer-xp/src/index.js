@@ -66,7 +66,7 @@ function createWindow() {
     },
   });
   mainWindow.setMenuBarVisibility(false);
-  mainWindow.loadFile('../app.html');
+  mainWindow.loadFile('./src/html/app.html');
 
   // DevTools
   // mainWindow.webContents.openDevTools();
@@ -176,14 +176,14 @@ ipcMain.handle('open-account', (evt, settingTxt) => {
 
   log('Open Account Window');
   let accountWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: 720,
+    height: 480,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
   accountWindow.setMenuBarVisibility(false);
-  accountWindow.loadFile('../account.html');
+  accountWindow.loadFile('./src/html/account.html');
   // DevTools
   // accountWindow.webContents.openDevTools();
 

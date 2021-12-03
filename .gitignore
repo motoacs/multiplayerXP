@@ -1,5 +1,8 @@
 setting.json
 
+# Electron Forge build files
+multiplayer-xp/out
+
 # Logs
 logs
 *.log

@@ -42,7 +42,10 @@
     }
   },
   "dependencies": {
-    "electron-squirrel-startup": "^1.0.0"
+    "electron-squirrel-startup": "^1.0.0",
+    "validator": "^13.6.0",
+    "ws": "^8.2.3",
+    "xss": "^1.0.10"
   },
   "devDependencies": {
     "@electron-forge/cli": "^6.0.0-beta.61",
