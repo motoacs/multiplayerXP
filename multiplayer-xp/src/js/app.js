@@ -283,7 +283,7 @@ function init() {
 
         const idx = this.players.findIndex((data) => data.id === playerId);
 
-        if (idx) {
+        if (idx >= 0) {
           this.players[idx].latitude = latitude;
           this.players[idx].callsign = callsign;
           this.players[idx].longitude = longitude;
