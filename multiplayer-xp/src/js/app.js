@@ -53,11 +53,12 @@ function init() {
         // {
         //   id      : 'Dummy',
         //   callsign: 'DMY012',
-        //   longitude: '',
-        //   latitude: '',
-        //   aircraft: '',
-        //   altitude: '',
-        //   speed   : '',
+        //   longitude: '12.3456',
+        //   latitude: '12.3456',
+        //   aircraft: 'B738',
+        //   altitude: '340000',
+        //   track: '012'
+        //   speed   : '345',
         // }
       ],
 
@@ -133,6 +134,8 @@ function init() {
         this.started = true;
         this.log('start: connecting...');
         window.api.start(JSON.stringify(this.tempSettingData));
+
+        this.players.splice(0);
       },
 
       stop() {
@@ -285,19 +288,23 @@ function init() {
 
         if (idx >= 0) {
           this.players[idx].latitude = latitude;
-          this.players[idx].callsign = callsign;
           this.players[idx].longitude = longitude;
-          this.players[idx].aircraft = aircraft;
+          this.players[idx].altitude = altitude;
+          this.players[idx].track = track;
           this.players[idx].speed = speed;
+          this.players[idx].callsign = callsign;
+          this.players[idx].aircraft = aircraft;
         }
         else {
           this.players.push({
             id: playerId,
-            callsign,
-            longitude,
             latitude,
-            aircraft,
+            longitude,
+            altitude,
+            track,
             speed,
+            callsign,
+            aircraft,
           });
           this.players.sort((player) => player.id);
         }
